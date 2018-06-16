@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# This assumes that the current directory is configured with a
+# Transifex Android project. If not, run 'tx init' in the
+# directory, and be prepared to fix the .tx/config file if
+# the title of the project.resource is incorrect, such as:
+# video-transcoder.strings-xml  should be:  video-transcoder.stringsxml
+
+tx pull --all --force
+if [ $? -ne 0 ]; then
+   echo "tx pull failed"
+   exit 1
+fi
+
+pushd app/src/main/res
+
+# Adjust the translation locations, as Transifex and Android do not
+# always agree.
+echo "Fixing Transifex language and region codes"
+for name in $(ls | grep values-); do
+    echo "name: ${name}"
+    if [ ! -z "$(echo $name | grep '_')" ]; then
+        trans_name=$(echo $name | cut -d '-' -f 2)
+        lang=$(echo ${trans_name} | cut -d '_' -f 1)
+        country=$(echo ${trans_name} | cut -d '_' -f 2)
+        android_name=${lang}-r${country}
+        printf "values-%s => values-%s\n" "$trans_name" "$android_name"
+        mkdir -p "values-${android_name}"
+        mv "values-${trans_name}"/* "values-${android_name}"
+        rm -rf "values-${trans_name}"
+    fi
+done
+
+# Transifex files sometimes incorrectly escape string quotes, such as
+#   <xliff:g id=\"app_revision_url\">%s</xliff:g></string>
+#               ^                 ^
+echo "Fixing Transifex incorrectly escaped strings"
+for dir in $(ls | grep values-); do
+    file="${dir}/strings.xml"
+    if [ -f ${file} ]; then
+        echo "Fixing ${file}"
+        tmpfile=$(mktemp)
+        sed 's/id=\\"/id="/g' "${file}" > "${tmpfile}"
+        cp "${tmpfile}" "${file}"
+        sed 's/\\">/">/g' "${file}" > "${tmpfile}"
+        mv "${tmpfile}" "${file}"
+    fi
+done
+
+popd
